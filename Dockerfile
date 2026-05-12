@@ -7,10 +7,10 @@ RUN apt-get update \
 RUN pip install --no-cache-dir requests==2.32.3
 
 WORKDIR /app
-COPY re-pair.py /app/re-pair.py
-RUN chmod +x /app/re-pair.py
+COPY repair.py /app/repair.py
+RUN chmod +x /app/repair.py
 
-ENV RE_PAIR_FFPROBE=/usr/bin/ffprobe \
+ENV REPAIR_FFPROBE=/usr/bin/ffprobe \
     PYTHONUNBUFFERED=1
 
-ENTRYPOINT ["python3", "-u", "/app/re-pair.py"]
+ENTRYPOINT ["python3", "-u", "/app/repair.py"]

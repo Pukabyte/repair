@@ -1,4 +1,4 @@
-# re-pair
+# repair
 
 Repair broken decypharr-served symlinks in a media library by deleting the
 stale file record in radarr/sonarr and triggering a fresh search. Designed
@@ -8,8 +8,8 @@ nzbdav).
 
 ## What it does
 
-For every symlink under `RE_PAIR_MEDIA_LINKS_ROOT` whose target lives under
-`RE_PAIR_DECYPHARR_MOUNT`:
+For every symlink under `REPAIR_MEDIA_LINKS_ROOT` whose target lives under
+`REPAIR_DECYPHARR_MOUNT`:
 
 1. Probes the target with `ffprobe` (header + one packet) to check it can
    actually be played.
@@ -26,17 +26,23 @@ concurrently with backpressure.
 ## First run
 
 Prebuilt multi-arch images are published to
-[`ghcr.io/pukabyte/re-pair`](https://ghcr.io/pukabyte/re-pair) on every
+[`ghcr.io/pukabyte/repair`](https://ghcr.io/pukabyte/repair) on every
 push to `main` and tagged release.
 
 ```sh
-git clone https://github.com/Pukabyte/re-pair.git
-cd re-pair
-docker compose run --rm re-pair
+git clone https://github.com/Pukabyte/repair.git
+cd repair
+mkdir -p config
+cp .env.example config/.env
+cp arrs.json.example config/arrs.json
+# edit config/.env and config/arrs.json (api keys, paths) here
+docker compose run --rm repair
 ```
 
-The first run creates `./config/.env` and `./config/arrs.json` from
-templates and exits. Edit them, then run the same command again.
+`config/.env` and `config/arrs.json` are the live config. The
+`.env.example` and `arrs.json.example` files in the repo are templates
+to copy from — they are not read at runtime. If `config/` is empty when
+the container starts, the script will print this hint and exit.
 
 To build the image locally instead of pulling from GHCR, uncomment the
 `build: .` line in `docker-compose.yml`.
@@ -56,19 +62,19 @@ All knobs live in `./config/.env`. CLI flags override env vars at runtime.
 
 | Env var                       | Default               | Meaning |
 |-------------------------------|-----------------------|---------|
-| `RE_PAIR_MEDIA_LINKS_ROOT`    | `/mnt/medialinks`     | Symlink tree the arrs see. Must match arr rootfolder paths exactly. |
-| `RE_PAIR_DECYPHARR_MOUNT`     | `/mnt/remote/realdebrid` | Prefix that identifies decypharr-served targets. |
-| `RE_PAIR_ARRS_FILE`           | `/config/arrs.json`   | Path to arr config JSON. |
-| `RE_PAIR_WORKERS`             | `16`                  | Parallel ffprobe probes. |
-| `RE_PAIR_DELAY`               | `3.0`                 | Seconds to sleep after each successful repair. |
-| `RE_PAIR_LIMIT`               | `0`                   | Stop after N bad items pushed (0 = unlimited). Useful for tests. |
-| `RE_PAIR_DRY_RUN`             | `false`               | Report only; no deletes or searches. |
-| `RE_PAIR_QUEUE_SIZE`          | `256`                 | Bounded queue between scanner and repairer. |
-| `RE_PAIR_VERIFY`              | `false`               | Poll the arr after each repair to confirm search + grab. |
-| `RE_PAIR_VERIFY_DEADLINE`     | `300`                 | Per-item verifier deadline in seconds. |
-| `RE_PAIR_VERIFY_POLL`         | `10`                  | Verifier poll interval in seconds. |
-| `RE_PAIR_PROBE_TIMEOUT`       | `20`                  | Per-file ffprobe timeout in seconds. |
-| `RE_PAIR_HTTP_TIMEOUT`        | `60`                  | Per-request HTTP timeout in seconds. |
+| `REPAIR_MEDIA_LINKS_ROOT`    | `/mnt/medialinks`     | Symlink tree the arrs see. Must match arr rootfolder paths exactly. |
+| `REPAIR_DECYPHARR_MOUNT`     | `/mnt/remote/realdebrid` | Prefix that identifies decypharr-served targets. |
+| `REPAIR_ARRS_FILE`           | `/config/arrs.json`   | Path to arr config JSON. |
+| `REPAIR_WORKERS`             | `16`                  | Parallel ffprobe probes. |
+| `REPAIR_DELAY`               | `3.0`                 | Seconds to sleep after each successful repair. |
+| `REPAIR_LIMIT`               | `0`                   | Stop after N bad items pushed (0 = unlimited). Useful for tests. |
+| `REPAIR_DRY_RUN`             | `false`               | Report only; no deletes or searches. |
+| `REPAIR_QUEUE_SIZE`          | `256`                 | Bounded queue between scanner and repairer. |
+| `REPAIR_VERIFY`              | `false`               | Poll the arr after each repair to confirm search + grab. |
+| `REPAIR_VERIFY_DEADLINE`     | `300`                 | Per-item verifier deadline in seconds. |
+| `REPAIR_VERIFY_POLL`         | `10`                  | Verifier poll interval in seconds. |
+| `REPAIR_PROBE_TIMEOUT`       | `20`                  | Per-file ffprobe timeout in seconds. |
+| `REPAIR_HTTP_TIMEOUT`        | `60`                  | Per-request HTTP timeout in seconds. |
 
 ## Requirements
 

@@ -1,0 +1,4 @@
+[
+  { "name": "radarr",   "url": "http://radarr:7878",   "api_key": "", "type": "radarr" },
+  { "name": "sonarr",   "url": "http://sonarr:8989",   "api_key": "", "type": "sonarr" }
+]

@@ -1,17 +1,18 @@
 services:
-  re-pair:
-    image: ghcr.io/pukabyte/re-pair:latest
+  repair:
+    image: ghcr.io/pukabyte/repair:latest
     # Uncomment to build locally instead of pulling from GHCR:
     # build: .
-    container_name: re-pair
+    container_name: repair
     environment:
       # Tells the script where to bootstrap / read .env + arrs.json.
-      RE_PAIR_CONFIG_DIR: /config
+      REPAIR_CONFIG_DIR: /config
     volumes:
-      # Persistent config. On first run the script writes templates here and
-      # exits; edit them on the host and re-run.
+      # Persistent config. Populate it on the host before starting:
+      #   cp .env.example config/.env && cp arrs.json.example config/arrs.json
+      # then fill in api keys / paths.
       - ./config:/config
-      # Symlink tree the arrs see. Must match RE_PAIR_MEDIA_LINKS_ROOT and
+      # Symlink tree the arrs see. Must match REPAIR_MEDIA_LINKS_ROOT and
       # the arrs' rootfolder paths exactly (lookup is by full path).
       - /mnt/medialinks:/mnt/medialinks:ro
       # FUSE mount must be exposed with rslave so the container sees changes

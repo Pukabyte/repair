@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Re-pair: for every symlink under /mnt/medialinks that points at the
+Repair: for every symlink under /mnt/medialinks that points at the
 decypharr mount and is broken or unplayable, delete the file record in
 the owning arr and trigger a fresh search. With decypharr disabled in
 the arrs, the new release lands on nzbdav.
@@ -19,39 +19,6 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 import requests
-
-
-ENV_TEMPLATE = """\
-# re-pair configuration. Fill in values, then re-run the container.
-
-# Path the arrs see for the symlink tree. Must match radarr/sonarr rootfolder
-# paths exactly, since lookup is by full path.
-RE_PAIR_MEDIA_LINKS_ROOT=/mnt/medialinks
-
-# Symlink targets that start with this prefix are considered decypharr-served.
-RE_PAIR_DECYPHARR_MOUNT=/mnt/remote/realdebrid
-
-# Behavior knobs (CLI flags override these at runtime).
-RE_PAIR_WORKERS=32
-RE_PAIR_DELAY=3.0
-RE_PAIR_LIMIT=0
-RE_PAIR_DRY_RUN=false
-RE_PAIR_QUEUE_SIZE=256
-
-RE_PAIR_VERIFY=true
-RE_PAIR_VERIFY_DEADLINE=900
-RE_PAIR_VERIFY_POLL=15
-
-RE_PAIR_PROBE_TIMEOUT=20
-RE_PAIR_HTTP_TIMEOUT=60
-"""
-
-ARRS_TEMPLATE = """\
-[
-  { "name": "radarr",   "url": "http://radarr:7878",   "api_key": "", "type": "radarr" },
-  { "name": "sonarr",   "url": "http://sonarr:8989",   "api_key": "", "type": "sonarr" }
-]
-"""
 
 
 def _parse_dotenv(path: str) -> dict:
@@ -74,43 +41,31 @@ def _parse_dotenv(path: str) -> dict:
 
 def bootstrap_config():
     """
-    Create /config/.env and /config/arrs.json from templates if missing.
-    Load /config/.env into os.environ (without overriding existing vars).
-    Exit cleanly if either file had to be created — user needs to fill them in.
+    Load <config_dir>/.env into os.environ (without overriding existing vars)
+    and point REPAIR_ARRS_FILE at <config_dir>/arrs.json when it exists.
+    If neither file is present, emit a hint pointing at the example files
+    in the repo and exit so the user can populate config/ on the host.
     """
-    config_dir = os.environ.get("RE_PAIR_CONFIG_DIR", "/config")
+    config_dir = os.environ.get("REPAIR_CONFIG_DIR", "/config")
     if not os.path.isdir(config_dir):
         return
     env_path = os.path.join(config_dir, ".env")
     arrs_path = os.path.join(config_dir, "arrs.json")
-    created = []
-    if not os.path.exists(env_path):
-        try:
-            with open(env_path, "w") as f:
-                f.write(ENV_TEMPLATE)
-            created.append(env_path)
-        except OSError as e:
-            print(f"could not write {env_path}: {e}", file=sys.stderr)
-    if not os.path.exists(arrs_path):
-        try:
-            with open(arrs_path, "w") as f:
-                f.write(ARRS_TEMPLATE)
-            created.append(arrs_path)
-        except OSError as e:
-            print(f"could not write {arrs_path}: {e}", file=sys.stderr)
-    if created:
-        for p in created:
-            print(f"created template: {p}", flush=True)
+    if not os.path.exists(env_path) and not os.path.exists(arrs_path):
         print(
-            "\nFill in the templates above (api keys, paths, etc), "
-            "then re-run the container.",
+            f"no config found in {config_dir}. Copy the examples on the host:\n"
+            f"  cp .env.example {config_dir}/.env\n"
+            f"  cp arrs.json.example {config_dir}/arrs.json\n"
+            "then fill in api keys / paths and re-run.",
+            file=sys.stderr,
             flush=True,
         )
-        sys.exit(0)
+        sys.exit(1)
     if os.path.exists(env_path):
         for k, v in _parse_dotenv(env_path).items():
             os.environ.setdefault(k, v)
-    os.environ.setdefault("RE_PAIR_ARRS_FILE", arrs_path)
+    if os.path.exists(arrs_path):
+        os.environ.setdefault("REPAIR_ARRS_FILE", arrs_path)
 
 
 bootstrap_config()
@@ -129,22 +84,22 @@ def _env_bool(name: str, default: bool) -> bool:
     return v.strip().lower() in ("1", "true", "yes", "on")
 
 
-MEDIA_LINKS_ROOT = _env("RE_PAIR_MEDIA_LINKS_ROOT", "/mnt/medialinks")
-DECYPHARR_MOUNT = _env("RE_PAIR_DECYPHARR_MOUNT", "/mnt/remote/realdebrid")
-PLAYABILITY_TIMEOUT_S = int(_env("RE_PAIR_PROBE_TIMEOUT", "20"))
-HTTP_TIMEOUT_S = int(_env("RE_PAIR_HTTP_TIMEOUT", "60"))
-FFPROBE = _env("RE_PAIR_FFPROBE", "/usr/bin/ffprobe")
+MEDIA_LINKS_ROOT = _env("REPAIR_MEDIA_LINKS_ROOT", "/mnt/medialinks")
+DECYPHARR_MOUNT = _env("REPAIR_DECYPHARR_MOUNT", "/mnt/remote/realdebrid")
+PLAYABILITY_TIMEOUT_S = int(_env("REPAIR_PROBE_TIMEOUT", "20"))
+HTTP_TIMEOUT_S = int(_env("REPAIR_HTTP_TIMEOUT", "60"))
+FFPROBE = _env("REPAIR_FFPROBE", "/usr/bin/ffprobe")
 
 
 def load_arrs() -> list[dict]:
     """
     Load arr config from either:
-      - JSON file at RE_PAIR_ARRS_FILE, or
-      - inline JSON in RE_PAIR_ARRS
+      - JSON file at REPAIR_ARRS_FILE, or
+      - inline JSON in REPAIR_ARRS
     One of them is required. Each entry needs: name, url, api_key, type.
     """
-    path = os.environ.get("RE_PAIR_ARRS_FILE", "").strip()
-    inline = os.environ.get("RE_PAIR_ARRS", "").strip()
+    path = os.environ.get("REPAIR_ARRS_FILE", "").strip()
+    inline = os.environ.get("REPAIR_ARRS", "").strip()
     if path:
         with open(path) as f:
             arrs = json.load(f)
@@ -152,8 +107,8 @@ def load_arrs() -> list[dict]:
         arrs = json.loads(inline)
     else:
         raise SystemExit(
-            "no arr config: set RE_PAIR_ARRS_FILE=/path/to/arrs.json "
-            "or RE_PAIR_ARRS='[{...}]'"
+            "no arr config: set REPAIR_ARRS_FILE=/path/to/arrs.json "
+            "or REPAIR_ARRS='[{...}]'"
         )
     required = {"name", "url", "api_key", "type"}
     for a in arrs:
@@ -641,26 +596,26 @@ def repair_sonarr(arr, sym: str, dry_run: bool) -> RepairResult:
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--root", default=MEDIA_LINKS_ROOT)
-    ap.add_argument("--workers", type=int, default=int(_env("RE_PAIR_WORKERS", "16")), help="parallel ffprobe probes")
-    ap.add_argument("--dry-run", action="store_true", default=_env_bool("RE_PAIR_DRY_RUN", False),
+    ap.add_argument("--workers", type=int, default=int(_env("REPAIR_WORKERS", "16")), help="parallel ffprobe probes")
+    ap.add_argument("--dry-run", action="store_true", default=_env_bool("REPAIR_DRY_RUN", False),
                     help="report only, no deletes or searches")
-    ap.add_argument("--limit", type=int, default=int(_env("RE_PAIR_LIMIT", "0")),
+    ap.add_argument("--limit", type=int, default=int(_env("REPAIR_LIMIT", "0")),
                     help="stop after N bad items pushed (0 = unlimited)")
-    ap.add_argument("--delay", type=float, default=float(_env("RE_PAIR_DELAY", "3.0")),
+    ap.add_argument("--delay", type=float, default=float(_env("REPAIR_DELAY", "3.0")),
                     help="seconds to sleep after each successful repair (radarr + sonarr)")
-    ap.add_argument("--queue-size", type=int, default=int(_env("RE_PAIR_QUEUE_SIZE", "256")),
+    ap.add_argument("--queue-size", type=int, default=int(_env("REPAIR_QUEUE_SIZE", "256")),
                     help="bounded queue size between scanner and repairer")
-    ap.add_argument("--verify", action="store_true", default=_env_bool("RE_PAIR_VERIFY", False),
+    ap.add_argument("--verify", action="store_true", default=_env_bool("REPAIR_VERIFY", False),
                     help="poll the arr after each repair to confirm search completed and a release was grabbed")
-    ap.add_argument("--verify-deadline", type=float, default=float(_env("RE_PAIR_VERIFY_DEADLINE", "300.0")),
+    ap.add_argument("--verify-deadline", type=float, default=float(_env("REPAIR_VERIFY_DEADLINE", "300.0")),
                     help="seconds to wait per item for a grab before giving up")
-    ap.add_argument("--verify-poll", type=float, default=float(_env("RE_PAIR_VERIFY_POLL", "10.0")),
+    ap.add_argument("--verify-poll", type=float, default=float(_env("REPAIR_VERIFY_POLL", "10.0")),
                     help="seconds between verifier polls")
     args = ap.parse_args()
 
     ARRS.clear()
     ARRS.extend(load_arrs())
-    src = "RE_PAIR_ARRS_FILE" if os.environ.get("RE_PAIR_ARRS_FILE") else "RE_PAIR_ARRS"
+    src = "REPAIR_ARRS_FILE" if os.environ.get("REPAIR_ARRS_FILE") else "REPAIR_ARRS"
     print(f"Loaded {len(ARRS)} arr instance(s) from {src}", flush=True)
 
     print("Loading arr root folders...", flush=True)
