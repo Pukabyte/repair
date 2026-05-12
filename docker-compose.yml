@@ -14,7 +14,7 @@ services:
       - ./config:/config
       # Symlink tree the arrs see. Must match REPAIR_MEDIA_LINKS_ROOT and
       # the arrs' rootfolder paths exactly (lookup is by full path).
-      - /mnt/medialinks:/mnt/medialinks:ro
+      - /mnt/{symlink library}:/mnt/{symlink library}:ro
       # FUSE mount must be exposed with rslave so the container sees changes
       # to the host mount (decypharr restart, remount, etc).
       - /mnt/remote/realdebrid:/mnt/remote/realdebrid:ro,rslave
